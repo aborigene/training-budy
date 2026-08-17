@@ -1,0 +1,75 @@
+name: Deploy to GCP
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/**'
+      - '.github/workflows/deploy.yaml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: training-budy-v2
+  REGION: us-central1
+  GARMIN_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/garmin-sync-job:latest
+  MCP_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/mcp-server:latest
+  LIBRECHAT_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/librechat:latest
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    # Required for OIDC Google Auth
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # You will replace these placeholders with the values outputted by Terraform
+          workload_identity_provider: 'projects/115970203752/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+          service_account: 'sa-github-actions@training-budy-v2.iam.gserviceaccount.com'
+                            
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and Push Garmin Sync Job
+        run: |
+          gcloud config set project ${{ env.PROJECT_ID }}
+          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.GARMIN_IMAGE }} ./apps/garmin-sync-job --suppress-logs
+
+      - name: Build and Push MCP Server
+        run: |
+          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.MCP_IMAGE }} ./apps/mcp-server --suppress-logs
+
+      - name: Build and Push LibreChat
+        run: |
+          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.LIBRECHAT_IMAGE }} ./apps/librechat --suppress-logs
+
+      - name: Update Cloud Run Services & Jobs
+        run: |
+          # Re-deploy the Cloud Run Job
+          gcloud run jobs update garmin-sync-job \
+            --image ${{ env.GARMIN_IMAGE }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+          
+          # Re-deploy the MCP Server
+          gcloud run services update mcp-server \
+            --image ${{ env.MCP_IMAGE }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
+
+          # Re-deploy LibreChat
+          gcloud run services update librechat \
+            --image ${{ env.LIBRECHAT_IMAGE }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }}
