@@ -46,8 +46,38 @@ def get_subjective_notes(limit: int = 5) -> str:
 # Setup FastAPI for MCP SSE and /notes endpoint
 app = FastAPI()
 
-# Mount FastMCP to FastAPI app
-app.mount("/mcp", mcp.get_asgi_app())
+# In FastMCP (mcp>=1.0.0), SSE integration requires explicit SSE handling
+from mcp.server.sse import SseServerTransport
+
+# Global transport reference
+sse_transport = None
+
+@app.get("/mcp/sse")
+async def handle_sse(request: Request):
+    global sse_transport
+    # Set the messages endpoint where clients will POST their MCP payloads
+    sse_transport = SseServerTransport("/mcp/messages")
+    
+    # Run the FastMCP core server loop connected to this SSE transport
+    import asyncio
+    asyncio.create_task(mcp._mcp_server.run(
+        sse_transport.messages_stream(),
+        sse_transport.post_message,
+        mcp._mcp_server._create_initialization_options()
+    ))
+    
+    # Return the SSE event stream response
+    return await sse_transport.handle_sse(request.scope, request.receive, request._send)
+
+@app.post("/mcp/messages")
+async def handle_messages(request: Request):
+    global sse_transport
+    if sse_transport is None:
+        return {"error": "SSE connection not established"}
+    
+    # Forward the incoming POST payload to the active SSE transport
+    await sse_transport.handle_post_message(request.scope, request.receive, request._send)
+    return {}
 
 @app.post("/notes")
 async def add_note(request: Request):
