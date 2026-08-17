@@ -1,7 +1,9 @@
 FROM ghcr.io/danny-avila/librechat-dev:latest
 
 USER root
-RUN apt-get update && apt-get install -y tailscale && rm -rf /var/lib/apt/lists/*
+
+# Install tailscale using the official static binary approach to avoid package manager discrepancies
+RUN curl -fsSL https://tailscale.com/install.sh | sh
 
 WORKDIR /app
 
