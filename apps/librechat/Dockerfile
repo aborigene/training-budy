@@ -2,8 +2,10 @@ FROM ghcr.io/danny-avila/librechat-dev:latest
 
 USER root
 
-# Install tailscale using the official static binary approach to avoid package manager discrepancies
-RUN curl -fsSL https://tailscale.com/install.sh | sh
+# Instala o Tailscale via gerenciador oficial do Alpine e libera permissões
+RUN apk update && \
+    apk add --no-cache tailscale && \
+    mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
 
 WORKDIR /app
 
