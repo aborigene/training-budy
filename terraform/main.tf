@@ -43,3 +43,14 @@ resource "google_artifact_registry_repository" "repo" {
   format        = "DOCKER"
   depends_on    = [google_project_service.services]
 }
+
+import {
+  to = google_firestore_database.database
+  id = "projects/training-budy-v2/databases/(default)"
+}
+
+import {
+  to = google_cloud_scheduler_job.garmin_sync_scheduler
+  id = "projects/training-budy-v2/locations/us-central1/jobs/garmin-sync-schedule"
+}
+

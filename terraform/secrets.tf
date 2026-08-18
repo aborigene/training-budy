@@ -38,3 +38,48 @@ resource "google_secret_manager_secret_version" "secret_versions" {
   # If the file is missing, Terraform will fail, enforcing the existence of the stuff directory for CI/CD or local runs.
   secret_data = file("${local.stuff_dir}/${each.key}.txt")
 }
+
+import {
+  to = google_secret_manager_secret.secrets["tailscale_authkey"]
+  id = "projects/115970203752/secrets/tailscale_authkey"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["mongo_uri"]
+  id = "projects/115970203752/secrets/mongo_uri"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["garmin_user"]
+  id = "projects/115970203752/secrets/garmin_user"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["garmin_pass"]
+  id = "projects/115970203752/secrets/garmin_pass"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["gemini_api_key"]
+  id = "projects/115970203752/secrets/gemini_api_key"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["jwt_secret"]
+  id = "projects/115970203752/secrets/jwt_secret"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["jwt_refresh_secret"]
+  id = "projects/115970203752/secrets/jwt_refresh_secret"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["creds_key"]
+  id = "projects/115970203752/secrets/creds_key"
+}
+
+import {
+  to = google_secret_manager_secret.secrets["creds_iv"]
+  id = "projects/115970203752/secrets/creds_iv"
+}

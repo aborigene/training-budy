@@ -35,7 +35,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           # You will replace these placeholders with the values outputted by Terraform
-          workload_identity_provider: 'projects/115970203752/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider'
+          workload_identity_provider: 'projects/115970203752/locations/global/workloadIdentityPools/github-actions-pool-v2/providers/github-provider'
           service_account: 'sa-github-actions@training-budy-v2.iam.gserviceaccount.com'
                             
 
