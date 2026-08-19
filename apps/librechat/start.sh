@@ -1,14 +1,18 @@
 #!/bin/sh
 
-echo "Starting Tailscale..."
-tailscaled --tun=userspace-networking --socks5-server=localhost:1055 &
-sleep 3
+# Inicia o daemon do Tailscale em background explicitando os sockets onde tem acesso de gravação
+echo "Starting Tailscale daemon..."
+tailscaled --tun=userspace-networking --socks5-server=localhost:1055 --socket=/tmp/tailscaled.sock &
+
+# Aguarda mais tempo para o daemon estabilizar (o Alpine demora um pouco)
+sleep 5
 
 if [ -n "$TAILSCALE_AUTHKEY" ]; then
-    tailscale up --authkey=${TAILSCALE_AUTHKEY} --hostname=librechat-gcp
+    echo "Authenticating Tailscale..."
+    tailscale --socket=/tmp/tailscaled.sock up --authkey=${TAILSCALE_AUTHKEY} --hostname=librechat-gcp --accept-routes
 else
-    echo "Warning: TAILSCALE_AUTHKEY not set. Tailscale will not authenticate."
+    echo "Warning: TAILSCALE_AUTHKEY not set."
 fi
 
-echo "Starting LibreChat..."
+echo "Starting LibreChat backend..."
 npm run backend

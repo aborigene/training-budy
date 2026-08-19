@@ -10,4 +10,4 @@ endpoints:
 mcpServers:
   training-budy:
     type: sse
-    url: "https://mcp-server-url/mcp/sse" # Will be updated with actual Cloud Run URL
+    url: "https://mcp-server-115970203752.us-central1.run.app/mcp/sse" # Will be updated with actual Cloud Run URL
