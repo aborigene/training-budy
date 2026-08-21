@@ -47,7 +47,7 @@ resource "google_cloud_run_v2_service" "librechat" {
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest"
       
       ports {
-        container_port = 3080
+        container_port = 8080
       }
 
       env {
