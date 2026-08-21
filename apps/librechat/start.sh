@@ -12,7 +12,8 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
 
     # O Mágico: Faz o Tailscale escutar na rede VPN (porta 3080) e encaminhar direto pro LibreChat local (3080)
     echo "Setting up reverse proxy to LibreChat..."
-    tailscale --socket=/tmp/tailscaled.sock serve --bg tcp:3080 tcp://127.0.0.1:3080
+    tailscale --socket=/tmp/tailscaled.sock serve --bg http://127.0.0.1:3080
+
 else
     echo "Warning: TAILSCALE_AUTHKEY not set."
 fi
