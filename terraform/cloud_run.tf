@@ -74,6 +74,16 @@ resource "google_cloud_run_v2_service" "librechat" {
         name  = "HOST"
         value = "0.0.0.0" 
       }
+
+            env {
+        name  = "ALLOW_EMAIL_LOGIN"
+        value = "true"
+      }
+
+      env {
+        name  = "ALLOW_REGISTRATION"
+        value = "true"
+      }
       
       env {
         name = "MONGO_URI"
