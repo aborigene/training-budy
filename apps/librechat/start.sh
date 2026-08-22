@@ -20,7 +20,7 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
     # tailscale --socket=/tmp/tailscaled.sock serve --bg http://127.0.0.1:8080
 
     echo "Setting up reverse proxy to LibreChat..."
-    tailscale --socket=/tmp/tailscaled.sock serve --bg --http=10000 http://127.0.0.1:8080
+    tailscale --socket=/tmp/tailscaled.sock funnel --bg 8080
 
 else
     echo "Warning: TAILSCALE_AUTHKEY not set."
