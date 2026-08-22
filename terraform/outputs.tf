@@ -1,11 +1,6 @@
-output "mcp_server_url" {
-  value       = google_cloud_run_v2_service.mcp_server.uri
-  description = "URL of the MCP Server"
-}
-
-output "librechat_url" {
-  value       = google_cloud_run_v2_service.librechat.uri
-  description = "URL of the LibreChat service (Internal)"
+output "telegram_bot_url" {
+  value       = google_cloud_run_v2_service.telegram_bot.uri
+  description = "URL of the Telegram Bot service (set this as the Telegram webhook target)"
 }
 
 output "artifact_registry_repo" {

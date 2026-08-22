@@ -6,7 +6,6 @@ PROJECT_ID="training-budy"
 gcloud config set project $PROJECT_ID
 
 gcloud services enable run.googleapis.com \
-    firestore.googleapis.com \
     secretmanager.googleapis.com \
     cloudscheduler.googleapis.com \
     artifactregistry.googleapis.com

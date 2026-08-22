@@ -4,6 +4,16 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 5.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
+  }
+
+  # Remote state — bucket must exist before `terraform init` (see README bootstrap steps).
+  backend "gcs" {
+    bucket = "training-budy-v2-tfstate"
+    prefix = "terraform/state"
   }
 }
 
@@ -16,7 +26,6 @@ provider "google" {
 locals {
   services = [
     "run.googleapis.com",
-    "firestore.googleapis.com",
     "secretmanager.googleapis.com",
     "cloudscheduler.googleapis.com",
     "artifactregistry.googleapis.com",
@@ -42,11 +51,6 @@ resource "google_artifact_registry_repository" "repo" {
   description   = "Docker repository for training-budy containers"
   format        = "DOCKER"
   depends_on    = [google_project_service.services]
-}
-
-import {
-  to = google_firestore_database.database
-  id = "projects/training-budy-v2/databases/(default)"
 }
 
 import {

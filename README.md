@@ -1,71 +1,65 @@
 # Training Budy 🏃‍♂️🏊‍♂️🚴‍♂️
 
-Plataforma de controle e análise de treinos para Ironman integrada ao Garmin Connect, Google Sheets, LibreChat e Gemini. Deploy 100% serverless na GCP com segurança Zero Trust via Tailscale.
+Plataforma de controle e análise de treinos para Ironman integrada ao Garmin Connect, Google Sheets e um bot do Telegram como interface, usando a Claude API. Deploy 100% serverless na GCP.
 
 ## Estrutura do Monorepo
 - `terraform/`: Infraestrutura como Código (IaC) para provisionar GCP.
 - `apps/garmin-sync-job/`: Cloud Run Job sincronizando Garmin com Google Sheets.
-- `apps/mcp-server/`: Cloud Run Service provendo SSE MCP Server para métricas e notas via API.
-- `apps/librechat/`: Cloud Run Service rodando LibreChat integrado com Gemini e Tailscale.
+- `apps/telegram-bot/`: Cloud Run Service que recebe mensagens via webhook do Telegram e responde usando a Claude API.
+
+> Arquitetura anterior (LibreChat + MongoDB Atlas + Tailscale + MCP Server) foi descontinuada — o roteamento do Tailscale em modo userspace dentro do Cloud Run se mostrou inviável. Ver histórico no git para detalhes.
 
 ## Passo a Passo de Instalação
 
 ### 1. Pré-requisitos
 - Conta GCP com faturamento ativado e CLI (`gcloud`) instalada.
-- Tailscale Auth Key gerada no Admin Console.
-- API Key do Google Gemini.
+- [GitHub CLI (`gh`)](https://cli.github.com) instalado e autenticado (`gh auth login`).
+- Chave da Anthropic API (console.anthropic.com) — cobrança separada de uma eventual assinatura Claude.ai.
+- Bot do Telegram criado via [@BotFather](https://t.me/BotFather) (token) e seu `chat_id` pessoal.
 - Conta Garmin Connect e Credenciais.
-- Uma Planilha no Google Sheets (Copie o ID e crie abas "Treinos" e "Notas").
+- Uma Planilha no Google Sheets (Copie o ID e crie abas "Treinos" e "Notas") — usada a partir da Fase 2.
 
-### 2. Configurar Planilha Google Sheets
-Após rodar o Terraform, as Service Accounts serão criadas.
-1. Acesse o Google Sheets.
-2. Compartilhe a planilha concedendo permissão de "Editor" para os emails:
-   - `sa-garmin-job@training-budy.iam.gserviceaccount.com`
-   - `sa-mcp-server@training-budy.iam.gserviceaccount.com`
+### 2. Bootstrap do backend remoto do Terraform
+O state do Terraform vive num bucket GCS (não mais local), para evitar drift entre execuções locais e do CI:
+```bash
+gcloud storage buckets create gs://training-budy-v2-tfstate --project=training-budy-v2 --location=us-central1 --uniform-bucket-level-access
+```
 
-### 3. Deploy Infraestrutura (Terraform)
+### 3. Cadastrar os segredos localmente
+1. Crie um arquivo `.txt` para cada segredo dentro de `stuff/` (pasta ignorada pelo Git), contendo *apenas* o valor (sem quebra de linha no final):
+   - `garmin_user.txt`, `garmin_pass.txt`
+   - `anthropic_api_key.txt`
+   - `telegram_bot_token.txt`
+   - `telegram_webhook_secret.txt` (qualquer string aleatória longa — é validada pelo bot, não pelo Telegram)
+   - `telegram_allowed_chat_id.txt` (seu chat_id do Telegram — não sensível, mas mantido junto por conveniência)
+2. Rode `./scripts/sync_github_secrets.sh` — ele lê esses arquivos e configura os GitHub Actions Secrets/Variables via `gh`, sem passar pela UI do GitHub.
+
+### 4. Primeiro apply (local, obrigatório uma vez)
+O Service Account do GitHub Actions só ganha permissão de rodar `terraform apply` remotamente *depois* que um apply local conceder essa permissão a ele — então a primeira execução precisa ser local:
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars
+cp terraform.tfvars.example terraform.tfvars   # ajuste project_id/region/github_repo
+export TF_VAR_garmin_user=$(cat ../stuff/garmin_user.txt)
+export TF_VAR_garmin_pass=$(cat ../stuff/garmin_pass.txt)
+export TF_VAR_anthropic_api_key=$(cat ../stuff/anthropic_api_key.txt)
+export TF_VAR_telegram_bot_token=$(cat ../stuff/telegram_bot_token.txt)
+export TF_VAR_telegram_webhook_secret=$(cat ../stuff/telegram_webhook_secret.txt)
+export TF_VAR_telegram_allowed_chat_id=$(cat ../stuff/telegram_allowed_chat_id.txt)
 terraform init
 terraform apply
 ```
+Guarde a saída de `workload_identity_provider` e `github_actions_sa_email` (já referenciadas em [.github/workflows/deploy.yaml](.github/workflows/deploy.yaml)).
 
-### 4. Cadastrar Secrets no GCP (Via Terraform Local)
-Para automatizar a injeção dos Segredos diretamente no GCP Secret Manager pelo Terraform, foi criada a pasta `stuff/`. Esta pasta é **ignorada pelo Git** (`.gitignore`) para garantir a segurança.
+### 5. Deploy contínuo (GitHub Actions)
+A partir daqui, todo push em `main` que toque em `apps/**` ou `terraform/**` dispara o workflow: ele roda `terraform apply` (usando os `TF_VAR_*` injetados dos secrets configurados no passo 3) e depois builda/publica as imagens via Cloud Build.
 
-1. Navegue até a pasta `stuff/`.
-2. Crie um arquivo `.txt` para cada um dos seguintes secrets contendo *apenas* o valor do segredo (sem quebras de linha no final):
-   - `garmin_user.txt`
-   - `garmin_pass.txt`
-   - `gemini_api_key.txt`
-   - `tailscale_authkey.txt`
-   - `jwt_secret.txt`
-   - `jwt_refresh_secret.txt`
-   - `creds_key.txt`
-   - `creds_iv.txt`
-   - `mongo_uri.txt` (Com a connection string do seu cluster Free Tier no MongoDB Atlas)
-3. Ao executar `terraform apply`, o Terraform lerá esses arquivos locais na pasta `stuff/` e populacionará as versões iniciais dos segredos no GCP automaticamente.
+### 6. Registrar o webhook do Telegram
+Depois do primeiro deploy, pegue a URL do serviço (`terraform output telegram_bot_url`) e registre o webhook:
+```bash
+curl -X POST "https://api.telegram.org/bot$(cat stuff/telegram_bot_token.txt)/setWebhook" \
+  -d "url=<TELEGRAM_BOT_URL>/webhook" \
+  -d "secret_token=$(cat stuff/telegram_webhook_secret.txt)"
+```
 
-### 5. Configurar Integração Contínua (GitHub Actions)
-Todo o setup de `Workload Identity Federation` (acesso sem chaves) já foi gerado no seu Terraform.
-1. Na primeira execução do seu `terraform apply`, guarde a saída das variáveis `workload_identity_provider` e `github_actions_sa_email`.
-2. O arquivo de deploy do CI/CD já está criado em `.github/workflows/deploy.yaml`.
-3. Abra esse arquivo e atualize as variáveis no step `Google Auth` com os valores devolvidos pelo Terraform (Apenas o Project Number será necessário ser ajustado).
-4. Suba (Commit & Push) seu repositório para o GitHub na branch `main`.
-5. O GitHub Actions iniciará automaticamente. Ele usará o `Google Cloud Build` para montar as imagens e atualizar os Cloud Runs no GCP, sem que a sua máquina local encoste no Docker.
-
-### 6. Configuração Atalhos do iOS (Apple Shortcuts)
-Crie um atalho no seu iPhone para gravar notas de voz:
-1. Adicione a ação **Ditar Texto**.
-2. Adicione a ação **Obter URL** com o endereço do seu MCP Server (ex: `https://mcp-server-xyz.a.run.app/notes`).
-3. Adicione a ação **Obter Conteúdo da URL**, método POST.
-4. No Corpo (JSON), adicione a chave `note` mapeada para o `Texto Ditado`.
-
-### 7. Acesso Zero Trust via Tailscale
-- Vá ao Console do Tailscale.
-- A máquina `librechat-gcp` aparecerá na sua Tailnet.
-- Como o Cloud Run tem Ingress `internal-only`, acesse a interface do LibreChat conectando sua máquina pessoal à mesma Tailnet usando o IP do Tailscale da instância.
-
-> **Banco de Dados LibreChat (MongoDB Atlas na GCP)**: O LibreChat exige uma conexão via protocolo MongoDB. Para manter o faturamento e a gestão unificados no Google Cloud, este projeto utiliza a integração do **MongoDB Atlas provisionado via GCP Marketplace**. A `MONGO_URI` necessária pelo LibreChat será gerada na conta Atlas e salva no GCP Secret Manager.
+### 7. Configuração Atalhos do iOS (Apple Shortcuts) — Fase 2
+Envie notas de voz direto para o bot via [sendMessage da API do Telegram](https://core.telegram.org/bots/api#sendmessage), usando o app **Obter Conteúdo da URL** do Atalhos.

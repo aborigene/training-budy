@@ -1,4 +1,3 @@
-# test
 name: Deploy to GCP
 
 on:
@@ -7,6 +6,7 @@ on:
       - main
     paths:
       - 'apps/**'
+      - 'terraform/**'
       - '.github/workflows/deploy.yaml'
   workflow_dispatch:
 
@@ -14,13 +14,12 @@ env:
   PROJECT_ID: training-budy-v2
   REGION: us-central1
   GARMIN_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/garmin-sync-job:latest
-  MCP_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/mcp-server:latest
-  LIBRECHAT_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/librechat:latest
+  TELEGRAM_BOT_IMAGE: us-central1-docker.pkg.dev/training-budy-v2/training-budy-repo/telegram-bot:latest
 
 jobs:
-  build-and-deploy:
+  terraform:
     runs-on: ubuntu-latest
-    
+
     # Required for OIDC Google Auth
     permissions:
       contents: 'read'
@@ -34,10 +33,47 @@ jobs:
         id: auth
         uses: google-github-actions/auth@v2
         with:
-          # You will replace these placeholders with the values outputted by Terraform
           workload_identity_provider: 'projects/115970203752/locations/global/workloadIdentityPools/github-actions-pool-v2/providers/github-provider'
           service_account: 'sa-github-actions@training-budy-v2.iam.gserviceaccount.com'
-                            
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Apply
+        working-directory: terraform
+        env:
+          # Structural infra changes only — secret_data is ignore_changes'd
+          # after the first apply (see terraform/secrets.tf), so this job
+          # never rewrites secret material on routine pushes.
+          TF_VAR_garmin_user: ${{ secrets.GARMIN_USER }}
+          TF_VAR_garmin_pass: ${{ secrets.GARMIN_PASS }}
+          TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          TF_VAR_telegram_bot_token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_webhook_secret: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          TF_VAR_telegram_allowed_chat_id: ${{ vars.TELEGRAM_ALLOWED_CHAT_ID }}
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+  build-and-deploy:
+    needs: terraform
+    runs-on: ubuntu-latest
+
+    # Required for OIDC Google Auth
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/115970203752/locations/global/workloadIdentityPools/github-actions-pool-v2/providers/github-provider'
+          service_account: 'sa-github-actions@training-budy-v2.iam.gserviceaccount.com'
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -47,13 +83,9 @@ jobs:
           gcloud config set project ${{ env.PROJECT_ID }}
           gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.GARMIN_IMAGE }} ./apps/garmin-sync-job --suppress-logs
 
-      - name: Build and Push MCP Server
+      - name: Build and Push Telegram Bot
         run: |
-          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.MCP_IMAGE }} ./apps/mcp-server --suppress-logs
-
-      - name: Build and Push LibreChat
-        run: |
-          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.LIBRECHAT_IMAGE }} ./apps/librechat --suppress-logs
+          gcloud builds submit --project=${{ env.PROJECT_ID }} --region=${{ env.REGION }} --tag ${{ env.TELEGRAM_BOT_IMAGE }} ./apps/telegram-bot --suppress-logs
 
       - name: Update Cloud Run Services & Jobs
         run: |
@@ -62,15 +94,9 @@ jobs:
             --image ${{ env.GARMIN_IMAGE }} \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }}
-          
-          # Re-deploy the MCP Server
-          gcloud run services update mcp-server \
-            --image ${{ env.MCP_IMAGE }} \
-            --region ${{ env.REGION }} \
-            --project ${{ env.PROJECT_ID }}
 
-          # Re-deploy LibreChat
-          gcloud run services update librechat \
-            --image ${{ env.LIBRECHAT_IMAGE }} \
+          # Re-deploy the Telegram Bot
+          gcloud run services update telegram-bot \
+            --image ${{ env.TELEGRAM_BOT_IMAGE }} \
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }}

@@ -4,14 +4,9 @@ resource "google_service_account" "garmin_job" {
   display_name = "SA Garmin Job"
 }
 
-resource "google_service_account" "mcp_server" {
-  account_id   = "sa-mcp-server"
-  display_name = "SA MCP Server"
-}
-
-resource "google_service_account" "librechat" {
-  account_id   = "sa-librechat"
-  display_name = "SA LibreChat"
+resource "google_service_account" "telegram_bot" {
+  account_id   = "sa-telegram-bot"
+  display_name = "SA Telegram Bot"
 }
 
 # Roles for Secret Manager
@@ -21,23 +16,23 @@ resource "google_project_iam_member" "garmin_job_secret_accessor" {
   member  = "serviceAccount:${google_service_account.garmin_job.email}"
 }
 
-resource "google_project_iam_member" "mcp_server_secret_accessor" {
+resource "google_project_iam_member" "telegram_bot_secret_accessor" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
-  member  = "serviceAccount:${google_service_account.mcp_server.email}"
+  member  = "serviceAccount:${google_service_account.telegram_bot.email}"
 }
 
-resource "google_project_iam_member" "librechat_secret_accessor" {
-  project = var.project_id
-  role    = "roles/secretmanager.secretAccessor"
-  member  = "serviceAccount:${google_service_account.librechat.email}"
-}
-
-# Roles for Firestore (LibreChat)
-resource "google_project_iam_member" "librechat_firestore_user" {
-  project = var.project_id
-  role    = "roles/datastore.user"
-  member  = "serviceAccount:${google_service_account.librechat.email}"
+# GCP IAM grants take a few seconds to propagate. Without this, Cloud Run can
+# try to create a revision using the secret before the accessor role above is
+# actually enforced, and fail with "Permission denied on secret" even though
+# the IAM member resource already exists. Cloud Run services/jobs that mount
+# secrets depend_on this to avoid the race — see cloud_run.tf.
+resource "time_sleep" "wait_for_secret_iam" {
+  create_duration = "30s"
+  depends_on = [
+    google_project_iam_member.garmin_job_secret_accessor,
+    google_project_iam_member.telegram_bot_secret_accessor,
+  ]
 }
 
 # Workload Identity Federation for GitHub Actions
@@ -146,14 +141,8 @@ resource "google_project_iam_member" "github_actions_run_admin" {
 }
 
 # Required to deploy Cloud Run services (act as the service accounts attached to the runners)
-resource "google_service_account_iam_member" "github_actions_actas_mcp" {
-  service_account_id = google_service_account.mcp_server.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.github_actions.email}"
-}
-
-resource "google_service_account_iam_member" "github_actions_actas_librechat" {
-  service_account_id = google_service_account.librechat.name
+resource "google_service_account_iam_member" "github_actions_actas_telegram_bot" {
+  service_account_id = google_service_account.telegram_bot.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.github_actions.email}"
 }
@@ -162,5 +151,15 @@ resource "google_service_account_iam_member" "github_actions_actas_garmin" {
   service_account_id = google_service_account.garmin_job.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.github_actions.email}"
+}
+
+# Required for CI-driven `terraform apply` to manage Secret Manager resources
+# (secret containers only — secret_data writes are ignore_changes'd after the
+# initial apply, see secrets.tf). The existing github_actions_storage_admin
+# role (above) already covers read/write access to the remote state bucket.
+resource "google_project_iam_member" "github_actions_secretmanager_admin" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
 
