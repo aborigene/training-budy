@@ -20,4 +20,4 @@ else
 fi
 
 echo "Starting LibreChat backend..."
-npm run backend
+PORT=3080 npm run backend
